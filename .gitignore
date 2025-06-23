@@ -1,0 +1,34 @@
+# Python cache and environment
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+env/
+venv/
+ENV/
+
+# Logs and data
+logs/
+*.log
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# FAISS and metadata
+*.index
+*.pkl
+*.json
+metadata.json
+kb_cache.pkl
+
+# Credentials and configs
+.env
+*.db
+
+# PDF uploads (optional)
+data/*.pdf
+
+# VS Code
+.vscode/
