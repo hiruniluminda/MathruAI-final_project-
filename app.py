@@ -406,11 +406,11 @@ def upload_pdf():
         processing_time = (datetime.now() - start_time).total_seconds()
         
         # Clean up uploaded file
-        try:
-            os.remove(file_path)
-            logger.info(f"Cleaned up uploaded file: {filename}")
-        except Exception as cleanup_error:
-            logger.warning(f"Failed to cleanup file {filename}: {cleanup_error}")
+        # try:
+        #     os.remove(file_path)
+        #     logger.info(f"Cleaned up uploaded file: {filename}")
+        # except Exception as cleanup_error:
+        #     logger.warning(f"Failed to cleanup file {filename}: {cleanup_error}")
         
         if success:
             # Get updated stats

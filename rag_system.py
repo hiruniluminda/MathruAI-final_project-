@@ -845,39 +845,39 @@ Please provide a helpful response based on the context above. If the context doe
 PregnancyRAG = VectorPregnancyRAG
 
 # Example usage and testing
-if __name__ == "__main__":
-    # Initialize the RAG system
-    rag = VectorPregnancyRAG(chunk_size=600, chunk_overlap=80)
+# if __name__ == "__main__":
+#     # Initialize the RAG system
+#     rag = VectorPregnancyRAG(chunk_size=600, chunk_overlap=80)
     
-    # Test with various queries
-    test_queries = [
-        "What are the early signs of pregnancy?",
-        "How much weight should I gain during pregnancy?",
-        "What foods should I avoid while pregnant?",
-        "When should I start taking prenatal vitamins?"
-    ]
+#     # Test with various queries
+#     test_queries = [
+#         "What are the early signs of pregnancy?",
+#         "How much weight should I gain during pregnancy?",
+#         "What foods should I avoid while pregnant?",
+#         "When should I start taking prenatal vitamins?"
+#     ]
     
-    print("Testing RAG system with token management...")
-    print("=" * 50)
+#     print("Testing RAG system with token management...")
+#     print("=" * 50)
     
-    for query in test_queries:
-        print(f"\nQuery: {query}")
-        print("-" * 30)
+#     for query in test_queries:
+#         print(f"\nQuery: {query}")
+#         print("-" * 30)
         
-        try:
-            response = rag.generate_response(query)
-            print(f"Response: {response}")
-        except Exception as e:
-            print(f"Error: {e}")
+#         try:
+#             response = rag.generate_response(query)
+#             print(f"Response: {response}")
+#         except Exception as e:
+#             print(f"Error: {e}")
         
-        print("-" * 30)
+#         print("-" * 30)
     
-    # Print system statistics
-    stats = rag.get_kb_stats()
-    print(f"\nSystem Statistics:")
-    print(f"Total chunks: {stats.get('total_chunks', 0)}")
-    print(f"Max context tokens: {stats.get('max_context_tokens', 0)}")
-    print(f"Database connected: {stats.get('database_connected', False)}")
+#     # Print system statistics
+#     stats = rag.get_kb_stats()
+#     print(f"\nSystem Statistics:")
+#     print(f"Total chunks: {stats.get('total_chunks', 0)}")
+#     print(f"Max context tokens: {stats.get('max_context_tokens', 0)}")
+#     print(f"Database connected: {stats.get('database_connected', False)}")
     
-    # Cleanup
-    del rag
+#     # Cleanup
+#     del rag
