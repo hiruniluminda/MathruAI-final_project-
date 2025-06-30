@@ -351,6 +351,38 @@ class DatabaseManager:
                     INDEX idx_timestamp (search_timestamp)
                 )
             """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    session_name VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    message_count INT DEFAULT 0,
+                    INDEX idx_created_at (created_at),
+                    INDEX idx_updated_at (updated_at)
+                )
+            """)
+            
+            # NEW: Create chat_messages table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    session_id INT NOT NULL,
+                    message TEXT NOT NULL,
+                    response LONGTEXT,
+                    message_type ENUM('user', 'assistant') NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    response_time_ms INT,
+                    context_chunks_count INT,
+                    similarity_threshold FLOAT,
+                    top_k INT,
+                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                    INDEX idx_session_id (session_id),
+                    INDEX idx_created_at (created_at)
+                )
+            """)
             
             self.connection.commit()
             print("✅ Database tables setup complete")
@@ -445,10 +477,142 @@ class DatabaseManager:
             print(f"Error getting chunk stats: {e}")
             return {}
     
+    def create_chat_session(self, session_name: str = None) -> int:
+            """Create a new chat session"""
+            if not self.connection:
+                return -1
+            
+            if not session_name:
+                session_name = f"Chat {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute("""
+                    INSERT INTO chat_sessions (session_name) VALUES (%s)
+                """, (session_name,))
+                
+                self.connection.commit()
+                session_id = cursor.lastrowid
+                print(f"Created chat session: {session_id} - {session_name}")
+                return session_id
+                
+            except Error as e:
+                print(f"Error creating chat session: {e}")
+                return -1
+
+    def get_chat_sessions(self, limit: int = 50) -> List[dict]:
+        """Get list of chat sessions"""
+        if not self.connection:
+            return []
+        
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT id, session_name, created_at, updated_at, message_count
+                FROM chat_sessions 
+                WHERE is_active = TRUE
+                ORDER BY updated_at DESC 
+                LIMIT %s
+            """, (limit,))
+            
+            sessions = cursor.fetchall()
+            
+            # Convert datetime objects to strings for JSON serialization
+            for session in sessions:
+                session['created_at'] = session['created_at'].isoformat()
+                session['updated_at'] = session['updated_at'].isoformat()
+            
+            return sessions
+            
+        except Error as e:
+            print(f"Error getting chat sessions: {e}")
+            return []
+
+    def get_chat_messages(self, session_id: int) -> List[dict]:
+        """Get all messages for a chat session"""
+        if not self.connection:
+            return []
+        
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT id, message, response, message_type, created_at, 
+                       response_time_ms, context_chunks_count
+                FROM chat_messages 
+                WHERE session_id = %s 
+                ORDER BY created_at ASC
+            """, (session_id,))
+            
+            messages = cursor.fetchall()
+            
+            # Convert datetime objects to strings
+            for message in messages:
+                message['created_at'] = message['created_at'].isoformat()
+            
+            return messages
+            
+        except Error as e:
+            print(f"Error getting chat messages: {e}")
+            return []
+
+    def store_chat_message(self, session_id: int, message: str, response: str = None, 
+                          message_type: str = 'user', response_time_ms: int = None, 
+                          context_chunks_count: int = None, similarity_threshold: float = None, 
+                          top_k: int = None) -> int:
+        """Store a chat message"""
+        if not self.connection:
+            return -1
+        
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                INSERT INTO chat_messages 
+                (session_id, message, response, message_type, response_time_ms, 
+                 context_chunks_count, similarity_threshold, top_k)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (session_id, message, response, message_type, response_time_ms, 
+                  context_chunks_count, similarity_threshold, top_k))
+            
+            # Update session message count and timestamp
+            cursor.execute("""
+                UPDATE chat_sessions 
+                SET message_count = message_count + 1, updated_at = NOW()
+                WHERE id = %s
+            """, (session_id,))
+            
+            self.connection.commit()
+            message_id = cursor.lastrowid
+            return message_id
+            
+        except Error as e:
+            print(f"Error storing chat message: {e}")
+            return -1
+
+    def delete_chat_session(self, session_id: int) -> bool:
+        """Delete a chat session (soft delete)"""
+        if not self.connection:
+            return False
+        
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                UPDATE chat_sessions SET is_active = FALSE WHERE id = %s
+            """, (session_id,))
+            
+            self.connection.commit()
+            return cursor.rowcount > 0
+            
+        except Error as e:
+            print(f"Error deleting chat session: {e}")
+            return False
+
+
     def close(self):
         """Close database connection"""
         if self.connection:
             self.connection.close()
+
+    
 
 class VectorPregnancyRAG:
     def __init__(self, embedding_model='all-MiniLM-L6-v2', chunk_size=800, chunk_overlap=100):  # Reduced sizes
@@ -841,43 +1005,7 @@ Please provide a helpful response based on the context above. If the context doe
         if hasattr(self, 'db_manager') and self.db_manager:
             self.db_manager.close()
 
+
+    
 # For backward compatibility
 PregnancyRAG = VectorPregnancyRAG
-
-# Example usage and testing
-# if __name__ == "__main__":
-#     # Initialize the RAG system
-#     rag = VectorPregnancyRAG(chunk_size=600, chunk_overlap=80)
-    
-#     # Test with various queries
-#     test_queries = [
-#         "What are the early signs of pregnancy?",
-#         "How much weight should I gain during pregnancy?",
-#         "What foods should I avoid while pregnant?",
-#         "When should I start taking prenatal vitamins?"
-#     ]
-    
-#     print("Testing RAG system with token management...")
-#     print("=" * 50)
-    
-#     for query in test_queries:
-#         print(f"\nQuery: {query}")
-#         print("-" * 30)
-        
-#         try:
-#             response = rag.generate_response(query)
-#             print(f"Response: {response}")
-#         except Exception as e:
-#             print(f"Error: {e}")
-        
-#         print("-" * 30)
-    
-#     # Print system statistics
-#     stats = rag.get_kb_stats()
-#     print(f"\nSystem Statistics:")
-#     print(f"Total chunks: {stats.get('total_chunks', 0)}")
-#     print(f"Max context tokens: {stats.get('max_context_tokens', 0)}")
-#     print(f"Database connected: {stats.get('database_connected', False)}")
-    
-#     # Cleanup
-#     del rag

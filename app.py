@@ -22,8 +22,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Create logs directory
-os.makedirs('logs', exist_ok=True)
+# # Create logs directory
+# os.makedirs('logs', exist_ok=True)
 
 app = Flask(__name__)
 CORS(app, origins=['*'])  # Configure CORS more specifically in production
@@ -97,17 +97,18 @@ def create_success_response(data: Dict[Any, Any], message: str = "Success") -> t
 
 @app.route('/', methods=['GET'])
 def index():
-    """Enhanced API documentation and status"""
+    """Enhanced API documentation and status with chat endpoints"""
     system_status = "healthy" if rag_system else "unhealthy"
     
     api_info = {
         "name": "Enhanced Pregnancy RAG API",
-        "version": "2.1",
+        "version": "2.2",  # Updated version
         "status": system_status,
-        "description": "Advanced RAG system with FAISS vector search and MySQL storage",
+        "description": "Advanced RAG system with FAISS vector search, MySQL storage, and chat history management",
         "features": [
             "FAISS vector indexing for fast similarity search",
             "MySQL database for metadata and search logging",
+            "Chat session management with history",  # NEW
             "Advanced semantic search with configurable parameters",
             "PDF document processing and ingestion",
             "Smart text chunking with overlap",
@@ -119,7 +120,9 @@ def index():
             "/": "GET - API documentation and status",
             "/health": "GET - Comprehensive system health check",
             "/stats": "GET - Knowledge base and system statistics",
-            "/chat": "POST - Interactive chat with AI assistant",
+            "/chat": "POST - Interactive chat with AI assistant (supports session_id)",
+            "/chats": "GET - Get list of chat sessions, POST - Create new chat session",  # NEW
+            "/chats/<session_id>": "GET - Get chat history, DELETE - Delete chat session",  # NEW
             "/search": "POST - Advanced semantic search",
             "/upload": "POST - Upload and process PDF documents",
             "/analytics": "GET - Search analytics and usage metrics",
@@ -127,6 +130,7 @@ def index():
         },
         "chat_parameters": {
             "message": "Required - User message/question",
+            "session_id": "Optional - Chat session ID (will create new if not provided)",  # NEW
             "top_k": "Optional - Number of relevant chunks to retrieve (default: 3)",
             "similarity_threshold": "Optional - Minimum similarity score (default: 0.1)"
         },
@@ -235,9 +239,114 @@ def get_stats():
         logger.error(f"Error getting stats: {str(e)}")
         return create_error_response(f"Failed to retrieve stats: {str(e)}")
 
+@app.route('/chats', methods=['GET'])
+def get_chat_sessions():
+    """Get list of all chat sessions"""
+    is_valid, error_msg = validate_rag_system()
+    if not is_valid:
+        return create_error_response(error_msg, 503)
+    
+    if not rag_system.db_manager or not rag_system.db_manager.connection:
+        return create_error_response("Database not available", 503)
+    
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        if limit > 100:
+            limit = 100
+        
+        sessions = rag_system.db_manager.get_chat_sessions(limit)
+        
+        return create_success_response({
+            "sessions": sessions,
+            "total_count": len(sessions)
+        }, "Chat sessions retrieved successfully")
+        
+    except Exception as e:
+        logger.error(f"Error getting chat sessions: {str(e)}")
+        return create_error_response(f"Failed to get chat sessions: {str(e)}")
+
+@app.route('/chats', methods=['POST'])
+def create_chat_session():
+    """Create a new chat session"""
+    is_valid, error_msg = validate_rag_system()
+    if not is_valid:
+        return create_error_response(error_msg, 503)
+    
+    if not rag_system.db_manager or not rag_system.db_manager.connection:
+        return create_error_response("Database not available", 503)
+    
+    try:
+        data = request.get_json() or {}
+        session_name = data.get('session_name')
+        
+        session_id = rag_system.db_manager.create_chat_session(session_name)
+        
+        if session_id > 0:
+            return create_success_response({
+                "session_id": session_id,
+                "session_name": session_name or f"Chat {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            }, "Chat session created successfully")
+        else:
+            return create_error_response("Failed to create chat session")
+            
+    except Exception as e:
+        logger.error(f"Error creating chat session: {str(e)}")
+        return create_error_response(f"Failed to create chat session: {str(e)}")
+
+
+@app.route('/chats/<int:session_id>', methods=['GET'])
+def get_chat_history(session_id):
+    """Get chat history for a specific session"""
+    is_valid, error_msg = validate_rag_system()
+    if not is_valid:
+        return create_error_response(error_msg, 503)
+    
+    if not rag_system.db_manager or not rag_system.db_manager.connection:
+        return create_error_response("Database not available", 503)
+    
+    try:
+        messages = rag_system.db_manager.get_chat_messages(session_id)
+        
+        return create_success_response({
+            "session_id": session_id,
+            "messages": messages,
+            "message_count": len(messages)
+        }, "Chat history retrieved successfully")
+        
+    except Exception as e:
+        logger.error(f"Error getting chat history: {str(e)}")
+        return create_error_response(f"Failed to get chat history: {str(e)}")
+
+
+@app.route('/chats/<int:session_id>', methods=['DELETE'])
+def delete_chat_session(session_id):
+    """Delete a chat session"""
+    is_valid, error_msg = validate_rag_system()
+    if not is_valid:
+        return create_error_response(error_msg, 503)
+    
+    if not rag_system.db_manager or not rag_system.db_manager.connection:
+        return create_error_response("Database not available", 503)
+    
+    try:
+        success = rag_system.db_manager.delete_chat_session(session_id)
+        
+        if success:
+            return create_success_response({
+                "session_id": session_id,
+                "deleted": True
+            }, "Chat session deleted successfully")
+        else:
+            return create_error_response("Chat session not found or already deleted", 404)
+            
+    except Exception as e:
+        logger.error(f"Error deleting chat session: {str(e)}")
+        return create_error_response(f"Failed to delete chat session: {str(e)}")
+
+
 @app.route('/chat', methods=['POST'])
 def chat():
-    """Enhanced chat endpoint with configurable parameters"""
+    """Enhanced chat endpoint with session support"""
     is_valid, error_msg = validate_rag_system()
     if not is_valid:
         return create_error_response(error_msg, 503)
@@ -252,6 +361,7 @@ def chat():
             return create_error_response("'message' field is required", 400)
             
         user_message = data['message'].strip()
+        session_id = data.get('session_id')  # NEW: Optional session_id
         
         if not user_message:
             return create_error_response("Message cannot be empty", 400)
@@ -267,7 +377,11 @@ def chat():
         if not isinstance(similarity_threshold, (int, float)) or similarity_threshold < 0 or similarity_threshold > 1:
             return create_error_response("similarity_threshold must be a number between 0 and 1", 400)
         
-        logger.info(f"Chat request - Query: {user_message[:100]}..., top_k: {top_k}, threshold: {similarity_threshold}")
+        # NEW: Create session if not provided and database is available
+        if not session_id and rag_system.db_manager and rag_system.db_manager.connection:
+            session_id = rag_system.db_manager.create_chat_session()
+        
+        logger.info(f"Chat request - Session: {session_id}, Query: {user_message[:100]}..., top_k: {top_k}, threshold: {similarity_threshold}")
         
         start_time = datetime.now()
         
@@ -285,7 +399,28 @@ def chat():
             response_text = rag_system.generate_response(user_message)
             processing_time = (datetime.now() - start_time).total_seconds()
             
-            return create_success_response({
+            # NEW: Store chat messages in database if session exists
+            if session_id and rag_system.db_manager and rag_system.db_manager.connection:
+                # Store user message
+                rag_system.db_manager.store_chat_message(
+                    session_id=session_id,
+                    message=user_message,
+                    message_type='user'
+                )
+                
+                # Store assistant response
+                rag_system.db_manager.store_chat_message(
+                    session_id=session_id,
+                    message=user_message,
+                    response=response_text,
+                    message_type='assistant',
+                    response_time_ms=int(processing_time * 1000),
+                    context_chunks_count=top_k,
+                    similarity_threshold=similarity_threshold,
+                    top_k=top_k
+                )
+            
+            response_data = {
                 "response": response_text,
                 "processing_time_seconds": round(processing_time, 3),
                 "search_method": "FAISS vector similarity + MySQL logging",
@@ -293,7 +428,13 @@ def chat():
                     "top_k": top_k,
                     "similarity_threshold": similarity_threshold
                 }
-            })
+            }
+            
+            # NEW: Include session_id in response
+            if session_id:
+                response_data["session_id"] = session_id
+            
+            return create_success_response(response_data)
             
         finally:
             # Restore original method
@@ -303,6 +444,7 @@ def chat():
         logger.error(f"Error in chat: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         return create_error_response(f"Chat processing failed: {str(e)}")
+
 
 @app.route('/search', methods=['POST'])
 def search_knowledge():
@@ -405,13 +547,6 @@ def upload_pdf():
         
         processing_time = (datetime.now() - start_time).total_seconds()
         
-        # Clean up uploaded file
-        # try:
-        #     os.remove(file_path)
-        #     logger.info(f"Cleaned up uploaded file: {filename}")
-        # except Exception as cleanup_error:
-        #     logger.warning(f"Failed to cleanup file {filename}: {cleanup_error}")
-        
         if success:
             # Get updated stats
             stats = rag_system.get_kb_stats()
@@ -438,33 +573,6 @@ def upload_pdf():
         logger.error(f"Traceback: {traceback.format_exc()}")
         return create_error_response(f"Failed to process PDF: {str(e)}")
 
-@app.route('/analytics', methods=['GET'])
-def get_analytics():
-    """Get search analytics and usage metrics"""
-    is_valid, error_msg = validate_rag_system()
-    if not is_valid:
-        return create_error_response(error_msg, 503)
-    
-    if not rag_system.db_manager or not rag_system.db_manager.connection:
-        return create_error_response("Database not available for analytics", 503)
-    
-    try:
-        # Basic analytics - you can extend this with more database queries
-        analytics_data = {
-            "analytics_available": True,
-            "note": "Basic analytics ready. Extend DatabaseManager for detailed metrics.",
-            "suggested_queries": [
-                "SELECT COUNT(*) FROM search_logs WHERE DATE(search_timestamp) = CURDATE()",
-                "SELECT AVG(response_time_ms) FROM search_logs WHERE search_timestamp > DATE_SUB(NOW(), INTERVAL 1 DAY)",
-                "SELECT query, COUNT(*) as frequency FROM search_logs GROUP BY query ORDER BY frequency DESC LIMIT 10"
-            ]
-        }
-        
-        return create_success_response(analytics_data)
-        
-    except Exception as e:
-        logger.error(f"Error getting analytics: {str(e)}")
-        return create_error_response(f"Analytics retrieval failed: {str(e)}")
 
 @app.route('/reinitialize', methods=['POST'])
 def reinitialize_system():
