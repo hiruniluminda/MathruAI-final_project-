@@ -402,11 +402,11 @@ def chat():
             # NEW: Store chat messages in database if session exists
             if session_id and rag_system.db_manager and rag_system.db_manager.connection:
                 # Store user message
-                rag_system.db_manager.store_chat_message(
-                    session_id=session_id,
-                    message=user_message,
-                    message_type='user'
-                )
+                # rag_system.db_manager.store_chat_message(
+                #     session_id=session_id,
+                #     message=user_message,
+                #     message_type='user'
+                # )
                 
                 # Store assistant response
                 rag_system.db_manager.store_chat_message(
